@@ -272,7 +272,7 @@ export default function App() {
                 <div className="space-y-4 font-minecraft text-center">
                   <div className="bg-blue-100 border-l-4 border-blue-500 p-4 text-sm">
                     <p className="font-bold text-lg mb-2">Join the Server!</p>
-                    <p>Log in to your Minecraft server and type:</p>
+                    <p>Log in to your Minecraft Account, and enter verifyweather.play.minekube.net and type:</p>
                   </div>
 
                   <div className="bg-black text-green-400 p-4 font-mono text-xl border-2 border-gray-600 select-all">
