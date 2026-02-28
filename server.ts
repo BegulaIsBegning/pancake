@@ -30,8 +30,6 @@ const upload = multer({ storage });
 
 async function startServer() {
   const app = express();
-
-  // ✅ PORT dinâmica (OBRIGATÓRIO no Render)
   const PORT = process.env.PORT || 3000;
 
   app.use(express.json());
@@ -59,8 +57,7 @@ async function startServer() {
     next();
   };
 
-  // --- AUTH ROUTES ---
-
+  // --- AUTH INIT ---
   app.post('/api/auth/init', (req, res) => {
     const { username } = req.body;
     if (!username)
@@ -80,20 +77,44 @@ async function startServer() {
       db.prepare(
         'UPDATE users SET verification_code = ?, is_verified = 0 WHERE id = ?'
       ).run(code, existing.id);
-      res.json({ code, username, id: existing.id });
+      return res.json({ code, username, id: existing.id });
     } else {
       db.prepare(
         'INSERT INTO users (id, username, verification_code, is_verified) VALUES (?, ?, ?, 0)'
       ).run(id, username, code);
-      res.json({ code, username, id });
+      return res.json({ code, username, id });
     }
   });
 
+  // --- VERIFY (SUPER FLEXÍVEL) ---
   app.post('/api/verify', (req, res) => {
-    const { username, code } = req.body;
+    let username = req.body.username;
+    let code = req.body.code;
 
-    if (!username || !code)
+    // Caso venha como { nick, uuid, code }
+    if (!username && req.body.nick) {
+      username = req.body.nick;
+      code = req.body.code;
+    }
+
+    // Caso venha embed do webhook
+    if (!username || !code) {
+      const text =
+        req.body.content ||
+        req.body.embeds?.[0]?.description ||
+        "";
+
+      const match = text.match(/(\w+).*\/verify\s+(\w+)/);
+
+      if (match) {
+        username = match[1];
+        code = match[2];
+      }
+    }
+
+    if (!username || !code) {
       return res.status(400).json({ error: 'Missing data' });
+    }
 
     const user = db
       .prepare(
@@ -101,10 +122,11 @@ async function startServer() {
       )
       .get(username, code) as any;
 
-    if (!user)
+    if (!user) {
       return res
         .status(404)
         .json({ error: 'Invalid username or code' });
+    }
 
     db.prepare(
       'UPDATE users SET is_verified = 1, verification_code = NULL WHERE id = ?'
@@ -113,6 +135,7 @@ async function startServer() {
     res.json({ success: true });
   });
 
+  // --- STATUS ---
   app.get('/api/auth/status', (req, res) => {
     const { username } = req.query;
     if (!username)
@@ -153,8 +176,7 @@ async function startServer() {
     res.json({ success: true });
   });
 
-  // --- REPORT ROUTES ---
-
+  // --- REPORTS ---
   app.get('/api/reports', (req, res) => {
     const reports = db
       .prepare(`
@@ -222,7 +244,7 @@ async function startServer() {
     }
   );
 
-  // --- DEV MODE (Vite Middleware) ---
+  // DEV
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -231,7 +253,7 @@ async function startServer() {
     app.use(vite.middlewares);
   }
 
-  // --- PRODUCTION MODE (Serve build) ---
+  // PROD
   if (process.env.NODE_ENV === 'production') {
     app.use(
       express.static(path.join(process.cwd(), 'dist'))
