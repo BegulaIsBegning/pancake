@@ -8,13 +8,11 @@ import { v4 as uuidv4 } from 'uuid';
 import db from './src/db';
 import crypto from 'crypto';
 
-// Ensure uploads directory exists
 const uploadsDir = path.join(process.cwd(), 'uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir);
 }
 
-// Configure Multer for photo uploads
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, uploadsDir);
@@ -36,16 +34,17 @@ async function startServer() {
   app.use(cookieParser());
   app.use('/uploads', express.static(uploadsDir));
 
-  // --- Middleware ---
+  // =========================
+  // Middleware
+  // =========================
+
   const requireAuth = (req: any, res: any, next: any) => {
     const userId = req.cookies.session_id;
     if (!userId)
       return res.status(401).json({ error: 'Unauthorized' });
 
     const user = db
-      .prepare(
-        'SELECT * FROM users WHERE id = ? AND is_verified = 1'
-      )
+      .prepare('SELECT * FROM users WHERE id = ? AND is_verified = 1')
       .get(userId);
 
     if (!user)
@@ -57,7 +56,10 @@ async function startServer() {
     next();
   };
 
-  // --- AUTH INIT ---
+  // =========================
+  // AUTH
+  // =========================
+
   app.post('/api/auth/init', (req, res) => {
     const { username } = req.body;
     if (!username)
@@ -67,6 +69,7 @@ async function startServer() {
       .randomBytes(3)
       .toString('hex')
       .toUpperCase();
+
     const id = uuidv4();
 
     const existing = db
@@ -77,27 +80,30 @@ async function startServer() {
       db.prepare(
         'UPDATE users SET verification_code = ?, is_verified = 0 WHERE id = ?'
       ).run(code, existing.id);
+
       return res.json({ code, username, id: existing.id });
     } else {
       db.prepare(
         'INSERT INTO users (id, username, verification_code, is_verified) VALUES (?, ?, ?, 0)'
       ).run(id, username, code);
+
       return res.json({ code, username, id });
     }
   });
 
-  // --- VERIFY (SUPER FLEXÍVEL) ---
+  // =========================
+  // VERIFY
+  // =========================
+
   app.post('/api/verify', (req, res) => {
     let username = req.body.username;
     let code = req.body.code;
 
-    // Caso venha como { nick, uuid, code }
     if (!username && req.body.nick) {
       username = req.body.nick;
       code = req.body.code;
     }
 
-    // Caso venha embed do webhook
     if (!username || !code) {
       const text =
         req.body.content ||
@@ -135,7 +141,6 @@ async function startServer() {
     res.json({ success: true });
   });
 
-  // --- STATUS ---
   app.get('/api/auth/status', (req, res) => {
     const { username } = req.query;
     if (!username)
@@ -148,10 +153,11 @@ async function startServer() {
     if (user && user.is_verified) {
       res.cookie('session_id', user.id, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
+        secure: true,
         sameSite: 'lax',
         maxAge: 365 * 24 * 60 * 60 * 1000
       });
+
       return res.json({ verified: true, user });
     }
 
@@ -163,9 +169,7 @@ async function startServer() {
     if (!userId) return res.json({ user: null });
 
     const user = db
-      .prepare(
-        'SELECT id, username FROM users WHERE id = ?'
-      )
+      .prepare('SELECT id, username FROM users WHERE id = ?')
       .get(userId);
 
     res.json({ user: user || null });
@@ -176,7 +180,10 @@ async function startServer() {
     res.json({ success: true });
   });
 
-  // --- REPORTS ---
+  // =========================
+  // REPORTS
+  // =========================
+
   app.get('/api/reports', (req, res) => {
     const reports = db
       .prepare(`
@@ -237,36 +244,40 @@ async function startServer() {
         res.json({ success: true, id });
       } catch (err) {
         console.error(err);
-        res
-          .status(500)
-          .json({ error: 'Failed to save report' });
+        res.status(500).json({ error: 'Failed to save report' });
       }
     }
   );
 
-  // DEV
-  if (process.env.NODE_ENV !== 'production') {
+  // =========================
+  // FRONTEND HANDLING
+  // =========================
+
+  const isDev = process.env.RENDER !== 'true';
+
+  if (isDev) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa'
     });
     app.use(vite.middlewares);
+  } else {
+    app.use(express.static(path.join(process.cwd(), 'dist')));
+
+    app.get('*', (req, res) => {
+      if (req.path.startsWith('/api')) {
+        return res.status(404).json({ error: 'API route not found' });
+      }
+
+      res.sendFile(
+        path.join(process.cwd(), 'dist', 'index.html')
+      );
+    });
   }
 
-// PROD
-if (process.env.NODE_ENV === 'production') {
-  app.use(
-    express.static(path.join(process.cwd(), 'dist'))
-  );
-
-  app.get('*', (req, res) => {
-    // NÃO deixa o frontend capturar rotas da API
-    if (req.path.startsWith('/api')) {
-      return res.status(404).json({ error: 'API route not found' });
-    }
-
-    res.sendFile(
-      path.join(process.cwd(), 'dist', 'index.html')
-    );
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on port ${PORT}`);
   });
 }
+
+startServer();
