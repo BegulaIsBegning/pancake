@@ -253,22 +253,20 @@ async function startServer() {
     app.use(vite.middlewares);
   }
 
-  // PROD
-  if (process.env.NODE_ENV === 'production') {
-    app.use(
-      express.static(path.join(process.cwd(), 'dist'))
+// PROD
+if (process.env.NODE_ENV === 'production') {
+  app.use(
+    express.static(path.join(process.cwd(), 'dist'))
+  );
+
+  app.get('*', (req, res) => {
+    // NÃO deixa o frontend capturar rotas da API
+    if (req.path.startsWith('/api')) {
+      return res.status(404).json({ error: 'API route not found' });
+    }
+
+    res.sendFile(
+      path.join(process.cwd(), 'dist', 'index.html')
     );
-
-    app.get('*', (req, res) => {
-      res.sendFile(
-        path.join(process.cwd(), 'dist', 'index.html')
-      );
-    });
-  }
-
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on port ${PORT}`);
   });
 }
-
-startServer();
